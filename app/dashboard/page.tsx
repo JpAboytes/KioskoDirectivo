@@ -35,7 +35,11 @@ export default function DashboardPage() {
 
   const fetchJustificantes = async () => {
     try {
-      const response = await fetch('/api/justificantes');
+      const response = await fetch('https://mongo-api-fawn.vercel.app/api/justificantes', {
+        headers: {
+          'X-API-KEY': process.env.NEXT_PUBLIC_MONGO_API_KEY || ''
+        }
+      });
       const data = await response.json();
       
       if (data.success) {
@@ -196,11 +200,54 @@ function CrearJustificante({ user, onSuccess }: { user: any; onSuccess: () => vo
     requester: '',
     eventName: '',
     justifiedDates: '',
-    studentsText: '',
+    selectedStudents: [] as string[],
   });
+  const [students, setStudents] = useState<Array<{ matricula: string; nombre: string; apellidos: string; carrera: string }>>([]);
+  const [loadingStudents, setLoadingStudents] = useState(false);
+  const [searchTerm, setSearchTerm] = useState('');
   const [loading, setLoading] = useState(false);
   const [success, setSuccess] = useState(false);
   const [error, setError] = useState('');
+
+  // Cargar estudiantes desde el servidor
+  useEffect(() => {
+    const fetchStudents = async () => {
+      setLoadingStudents(true);
+      try {
+        const response = await fetch('https://mongo-api-fawn.vercel.app/api/estudiantes', {
+          headers: {
+            'X-API-KEY': process.env.NEXT_PUBLIC_MONGO_API_KEY || ''
+          }
+        });
+        const data = await response.json();
+        if (data.success && Array.isArray(data.data)) {
+          setStudents(data.data);
+        }
+      } catch (err) {
+        console.error('Error al cargar estudiantes:', err);
+      } finally {
+        setLoadingStudents(false);
+      }
+    };
+    fetchStudents();
+  }, []);
+
+  // Filtrar estudiantes según búsqueda
+  const filteredStudents = students.filter(s => 
+    s.nombre.toLowerCase().includes(searchTerm.toLowerCase()) ||
+    s.apellidos.toLowerCase().includes(searchTerm.toLowerCase()) ||
+    s.matricula.includes(searchTerm) ||
+    s.carrera.toLowerCase().includes(searchTerm.toLowerCase())
+  );
+
+  const toggleStudent = (matricula: string) => {
+    setFormData(prev => ({
+      ...prev,
+      selectedStudents: prev.selectedStudents.includes(matricula)
+        ? prev.selectedStudents.filter(m => m !== matricula)
+        : [...prev.selectedStudents, matricula]
+    }));
+  };
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -209,16 +256,37 @@ function CrearJustificante({ user, onSuccess }: { user: any; onSuccess: () => vo
     setSuccess(false);
 
     try {
+      if (formData.selectedStudents.length === 0) {
+        setError('Debes seleccionar al menos un estudiante');
+        setLoading(false);
+        return;
+      }
+
       const dates = formData.justifiedDates.split(',').map(d => d.trim()).filter(d => d);
 
-      const response = await fetch('/api/justificantes', {
+      // Construir texto de estudiantes desde selección
+      const studentsText = formData.selectedStudents
+        .map(matricula => {
+          const student = students.find(s => s.matricula === matricula);
+          if (student) {
+            return `${student.nombre} ${student.apellidos} – ${student.matricula} – ${student.carrera}`;
+          }
+          return '';
+        })
+        .filter(Boolean)
+        .join('\n');
+
+      const response = await fetch('https://mongo-api-fawn.vercel.app/api/justificantes', {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
+          'X_API_KEY': process.env.NEXT_PUBLIC_MONGO_API_KEY || ''
         },
         body: JSON.stringify({
-          ...formData,
+          requester: formData.requester,
+          eventName: formData.eventName,
           justifiedDates: dates,
+          studentsText,
           userId: user.uid,
           userEmail: user.email,
         }),
@@ -228,7 +296,8 @@ function CrearJustificante({ user, onSuccess }: { user: any; onSuccess: () => vo
 
       if (data.success) {
         setSuccess(true);
-        setFormData({ requester: '', eventName: '', justifiedDates: '', studentsText: '' });
+        setFormData({ requester: '', eventName: '', justifiedDates: '', selectedStudents: [] });
+        setSearchTerm('');
         onSuccess();
         setTimeout(() => setSuccess(false), 3000);
       } else {
@@ -307,21 +376,64 @@ function CrearJustificante({ user, onSuccess }: { user: any; onSuccess: () => vo
 
         <div>
           <label className="block text-sm font-medium text-gray-700 mb-2">
-            Lista de Estudiantes <span className="text-red-500">*</span>
+            Seleccionar Estudiantes <span className="text-red-500">*</span>
           </label>
-          <textarea
-            value={formData.studentsText}
-            onChange={(e) => setFormData({ ...formData, studentsText: e.target.value })}
-            required
-            rows={6}
-            className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
-            placeholder="Ej:&#10;Juan Pérez – 12345 – Ingeniería&#10;María García – 67890 – Administración"
-          />
+          
+          {loadingStudents ? (
+            <div className="flex items-center justify-center py-8">
+              <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-blue-600"></div>
+              <span className="ml-2 text-gray-600">Cargando estudiantes...</span>
+            </div>
+          ) : (
+            <>
+              <input
+                type="text"
+                value={searchTerm}
+                onChange={(e) => setSearchTerm(e.target.value)}
+                placeholder="Buscar por nombre, matrícula o carrera..."
+                className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 mb-2"
+              />
+              
+              <div className="border border-gray-300 rounded-lg max-h-64 overflow-y-auto">
+                {filteredStudents.length === 0 ? (
+                  <p className="text-gray-500 text-center py-4">No se encontraron estudiantes</p>
+                ) : (
+                  filteredStudents.map((student) => (
+                    <label
+                      key={student.matricula}
+                      className="flex items-center px-3 py-2 hover:bg-gray-50 cursor-pointer border-b last:border-b-0"
+                    >
+                      <input
+                        type="checkbox"
+                        checked={formData.selectedStudents.includes(student.matricula)}
+                        onChange={() => toggleStudent(student.matricula)}
+                        className="h-4 w-4 text-blue-600 focus:ring-blue-500 border-gray-300 rounded"
+                      />
+                      <div className="ml-3 flex-1">
+                        <p className="text-sm font-medium text-gray-900">
+                          {student.nombre} {student.apellidos}
+                        </p>
+                        <p className="text-xs text-gray-500">
+                          {student.matricula} • {student.carrera}
+                        </p>
+                      </div>
+                    </label>
+                  ))
+                )}
+              </div>
+              
+              {formData.selectedStudents.length > 0 && (
+                <p className="mt-2 text-sm text-gray-600">
+                  {formData.selectedStudents.length} estudiante(s) seleccionado(s)
+                </p>
+              )}
+            </>
+          )}
         </div>
 
         <button
           type="submit"
-          disabled={loading}
+          disabled={loading || loadingStudents}
           className="w-full bg-blue-600 text-white py-2 px-4 rounded-lg hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-blue-500 disabled:bg-blue-400 transition-colors"
         >
           {loading ? 'Guardando...' : 'Crear Justificante'}
@@ -383,12 +495,14 @@ function SubirArchivoHTM() {
   const [loading, setLoading] = useState(false);
   const [success, setSuccess] = useState(false);
   const [error, setError] = useState('');
+  const [description, setDescription] = useState('');
+  const [processingStatus, setProcessingStatus] = useState('');
+  const [stats, setStats] = useState<{ estudiantes: number; profesores: number; horarios: number } | null>(null);
 
   const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const selectedFile = e.target.files?.[0];
     
     if (selectedFile) {
-      // Validar que sea archivo .htm o .html
       if (!selectedFile.name.endsWith('.htm') && !selectedFile.name.endsWith('.html')) {
         setError('Por favor selecciona un archivo .htm o .html');
         setFile(null);
@@ -397,6 +511,115 @@ function SubirArchivoHTM() {
       setFile(selectedFile);
       setError('');
     }
+  };
+
+  const processHTML = async (htmlContent: string) => {
+    setProcessingStatus('📄 Procesando HTML...');
+    
+    // Crear un parser DOM
+    const parser = new DOMParser();
+    const doc = parser.parseFromString(htmlContent, 'text/html');
+    
+    // Estructuras para almacenar datos únicos
+    const estudiantesMap = new Map();
+    const profesoresMap = new Map();
+    const horariosData: any[] = [];
+    
+    // Obtener todas las tablas
+    const tables = doc.querySelectorAll('table');
+    setProcessingStatus(`🔍 Procesando ${tables.length} tablas...`);
+    
+    for (const table of Array.from(tables)) {
+      const rows = table.querySelectorAll('tr');
+      let profesorActual: string | null = null;
+      let profesorNombre = '';
+      let profesorApellidos = '';
+      let grupoActual = '';
+      let materiaActual = '';
+      
+      for (const row of Array.from(rows)) {
+        const text = row.textContent?.trim() || '';
+        const cells = row.querySelectorAll('td, th');
+        
+        // Detectar línea de grupo y profesor (ej: "GRUPO:107C07-41 MAESTRO: 72256 RAMIREZ AVILA, ARMANDO MTRO.")
+        if (text.includes('GRUPO:') && text.includes('MAESTRO:')) {
+          const maestroMatch = text.match(/MAESTRO:\s*\d+\s+([^,]+),\s*([^\s]+)/);
+          if (maestroMatch) {
+            profesorApellidos = maestroMatch[1].trim();
+            profesorNombre = maestroMatch[2].trim().replace(/MTRO\.|MTRA\.|DR\.|DRA\./gi, '').trim();
+            const key = `${profesorNombre}_${profesorApellidos}`;
+            
+            if (!profesoresMap.has(key)) {
+              profesoresMap.set(key, {
+                nombre: profesorNombre,
+                apellidos: profesorApellidos,
+                correo: '',
+                escuela: 'Ingeniería'
+              });
+            }
+            profesorActual = key;
+          }
+          
+          const grupoMatch = text.match(/GRUPO:([^\s]+)/);
+          if (grupoMatch) {
+            grupoActual = grupoMatch[1].trim();
+          }
+        }
+        
+        // Detectar línea de materia (buscar patrones de código de materia)
+        if (text.match(/^[A-Z]{2,}\d{3}/) && !text.includes('MATRICULA')) {
+          const materiaMatch = text.match(/^([A-Z]{2,}\d{3})/);
+          if (materiaMatch) {
+            materiaActual = materiaMatch[1];
+          }
+        }
+        
+        // Detectar línea de estudiante (debe tener más de 4 columnas y contener matrícula)
+        if (cells.length >= 6) {
+          const numeroCell = cells[0]?.textContent?.trim();
+          const matriculaCell = cells[4]?.textContent?.trim();
+          const nombreCell = cells[5]?.textContent?.trim();
+          
+          // Verificar que es una fila de estudiante (número, matrícula válida y nombre)
+          if (numeroCell && /^\d+$/.test(numeroCell) && 
+              matriculaCell && /^\d{6}$/.test(matriculaCell) && 
+              nombreCell && nombreCell.includes(',')) {
+            
+            const [apellidosStr, nombreStr] = nombreCell.split(',').map(s => s.trim());
+            const programaCell = cells[1]?.textContent?.trim() || '';
+            const carrera = programaCell || 'Sin especificar';
+            
+            if (!estudiantesMap.has(matriculaCell)) {
+              estudiantesMap.set(matriculaCell, {
+                matricula: matriculaCell,
+                nombre: nombreStr || '',
+                apellidos: apellidosStr || '',
+                carrera: carrera,
+                escuela: 'Ingeniería',
+                status: 'activo'
+              });
+            }
+            
+            // Guardar relación para horarios
+            if (profesorActual && materiaActual) {
+              horariosData.push({
+                matricula: matriculaCell,
+                profesorKey: profesorActual,
+                materia: materiaActual,
+                grupo: grupoActual
+              });
+            }
+          }
+        }
+      }
+    }
+    
+    const estudiantes = Array.from(estudiantesMap.values());
+    const profesores = Array.from(profesoresMap.values());
+    
+    setProcessingStatus(`👥 ${estudiantes.length} estudiantes y 👨‍🏫 ${profesores.length} profesores encontrados`);
+    
+    return { estudiantes, profesores, horarios: horariosData };
   };
 
   const handleSubmit = async (e: React.FormEvent) => {
@@ -410,32 +633,98 @@ function SubirArchivoHTM() {
     setLoading(true);
     setError('');
     setSuccess(false);
+    setStats(null);
+    setProcessingStatus('📖 Leyendo archivo...');
 
     try {
-      const formData = new FormData();
-      formData.append('file', file);
-
-      const response = await fetch('https://mongo-api-fawn.vercel.app/api/upload-tables', {
-        method: 'POST',
-        body: formData,
-      });
-
-      const data = await response.json();
-
-      if (response.ok) {
-        setSuccess(true);
-        setFile(null);
-        // Reset file input
-        const fileInput = document.getElementById('file-input') as HTMLInputElement;
-        if (fileInput) fileInput.value = '';
+      // Leer el contenido del archivo
+      const htmlContent = await file.text();
+      
+      // Procesar HTML en el cliente
+      const { estudiantes, profesores, horarios } = await processHTML(htmlContent);
+      
+      setProcessingStatus('📤 Enviando datos al servidor en lotes...');
+      
+      // Dividir en lotes más pequeños para evitar error 413
+      const BATCH_SIZE = 50; // Reducir tamaño de lote
+      let batchCount = 0;
+      
+      // Enviar estudiantes en lotes
+      for (let i = 0; i < estudiantes.length; i += BATCH_SIZE) {
+        const batch = estudiantes.slice(i, i + BATCH_SIZE);
+        batchCount++;
+        setProcessingStatus(`📤 Enviando estudiantes (lote ${batchCount})...`);
         
-        setTimeout(() => setSuccess(false), 5000);
-      } else {
-        setError(data.error || 'Error al subir el archivo');
+        const response = await fetch('https://mongo-api-fawn.vercel.app/api/upload-tables', {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            'X_API_KEY': process.env.NEXT_PUBLIC_MONGO_API_KEY || ''
+          },
+          body: JSON.stringify({
+            estudiantes: batch,
+            profesores: i === 0 ? profesores : [], // Solo enviar profesores en el primer lote
+            horarios: [],
+            description: description || 'Carga desde cliente'
+          }),
+        });
+
+        if (!response.ok) {
+          const errorData = await response.json();
+          throw new Error(errorData.error || `Error en lote ${batchCount}`);
+        }
       }
+      
+      // Enviar horarios en lotes separados
+      if (horarios.length > 0) {
+        const HORARIO_BATCH_SIZE = 100;
+        for (let i = 0; i < horarios.length; i += HORARIO_BATCH_SIZE) {
+          const batch = horarios.slice(i, i + HORARIO_BATCH_SIZE);
+          batchCount++;
+          setProcessingStatus(`📤 Enviando horarios (lote ${batchCount})...`);
+          
+          const response = await fetch('https://mongo-api-fawn.vercel.app/api/upload-tables', {
+            method: 'POST',
+            headers: {
+              'Content-Type': 'application/json',
+              'X_API_KEY': process.env.NEXT_PUBLIC_MONGO_API_KEY || ''
+            },
+            body: JSON.stringify({
+              estudiantes: [],
+              profesores: [],
+              horarios: batch,
+              description: description || 'Carga desde cliente'
+            }),
+          });
+
+          if (!response.ok) {
+            const errorData = await response.json();
+            throw new Error(errorData.error || `Error en lote ${batchCount}`);
+          }
+        }
+      }
+
+      setSuccess(true);
+      setStats({
+        estudiantes: estudiantes.length,
+        profesores: profesores.length,
+        horarios: horarios.length
+      });
+      setFile(null);
+      setDescription('');
+      setProcessingStatus('');
+      
+      const fileInput = document.getElementById('file-input') as HTMLInputElement;
+      if (fileInput) fileInput.value = '';
+      
+      setTimeout(() => {
+        setSuccess(false);
+        setStats(null);
+      }, 10000);
     } catch (err) {
-      setError('Error al conectar con el servidor');
+      setError('Error al procesar el archivo: ' + (err instanceof Error ? err.message : 'Error desconocido'));
       console.error('Error:', err);
+      setProcessingStatus('');
     } finally {
       setLoading(false);
     }
@@ -445,15 +734,36 @@ function SubirArchivoHTM() {
     <div>
       <h2 className="text-xl font-semibold text-gray-900 mb-4">Subir Archivo HTM</h2>
       <p className="text-gray-600 mb-6">
-        Sube un archivo .htm para procesar los datos en el servidor
+        Sube un archivo .htm para extraer y procesar los datos de estudiantes, profesores y horarios
       </p>
 
-      {success && (
-        <div className="mb-4 p-4 bg-green-50 border border-green-200 text-green-700 rounded-lg flex items-start">
-          <svg className="h-5 w-5 mr-2 mt-0.5" fill="currentColor" viewBox="0 0 20 20">
-            <path fillRule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zm3.707-9.293a1 1 0 00-1.414-1.414L9 10.586 7.707 9.293a1 1 0 00-1.414 1.414l2 2a1 1 0 001.414 0l4-4z" clipRule="evenodd" />
-          </svg>
-          <span>✅ Archivo subido y procesado exitosamente</span>
+      {processingStatus && (
+        <div className="mb-4 p-4 bg-blue-50 border border-blue-200 text-blue-700 rounded-lg">
+          <div className="flex items-center">
+            <svg className="animate-spin h-5 w-5 mr-2" fill="none" viewBox="0 0 24 24">
+              <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
+              <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+            </svg>
+            <span>{processingStatus}</span>
+          </div>
+        </div>
+      )}
+
+      {success && stats && (
+        <div className="mb-4 p-4 bg-green-50 border border-green-200 text-green-700 rounded-lg">
+          <div className="flex items-start">
+            <svg className="h-5 w-5 mr-2 mt-0.5" fill="currentColor" viewBox="0 0 20 20">
+              <path fillRule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zm3.707-9.293a1 1 0 00-1.414-1.414L9 10.586 7.707 9.293a1 1 0 00-1.414 1.414l2 2a1 1 0 001.414 0l4-4z" clipRule="evenodd" />
+            </svg>
+            <div>
+              <p className="font-semibold mb-2">✅ Archivo procesado exitosamente</p>
+              <ul className="text-sm space-y-1">
+                <li>👥 Estudiantes: {stats.estudiantes}</li>
+                <li>👨‍🏫 Profesores: {stats.profesores}</li>
+                <li>📅 Horarios: {stats.horarios}</li>
+              </ul>
+            </div>
+          </div>
         </div>
       )}
 
@@ -467,6 +777,19 @@ function SubirArchivoHTM() {
       )}
 
       <form onSubmit={handleSubmit} className="space-y-6">
+        <div>
+          <label className="block text-sm font-medium text-gray-700 mb-2">
+            Descripción (opcional)
+          </label>
+          <input
+            type="text"
+            value={description}
+            onChange={(e) => setDescription(e.target.value)}
+            placeholder="Ej: Carga de horarios otoño 2025"
+            className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
+          />
+        </div>
+
         <div className="border-2 border-dashed border-gray-300 rounded-lg p-8 text-center hover:border-blue-400 transition-colors">
           <svg
             className="mx-auto h-12 w-12 text-gray-400"
@@ -516,6 +839,15 @@ function SubirArchivoHTM() {
           )}
         </div>
 
+        <div className="bg-gray-50 border border-gray-200 rounded-lg p-4">
+          <h3 className="text-sm font-semibold text-gray-700 mb-2">ℹ️ Proceso de extracción:</h3>
+          <ul className="text-xs text-gray-600 space-y-1">
+            <li>1. Se lee el archivo HTML en tu navegador</li>
+            <li>2. Se extraen automáticamente estudiantes, profesores y horarios</li>
+            <li>3. Los datos se envían al servidor para almacenarlos</li>
+          </ul>
+        </div>
+
         <button
           type="submit"
           disabled={!file || loading}
@@ -527,10 +859,10 @@ function SubirArchivoHTM() {
                 <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
                 <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
               </svg>
-              Subiendo archivo...
+              Procesando...
             </span>
           ) : (
-            '📤 Subir y Procesar Archivo'
+            '🔍 Procesar y Enviar Datos'
           )}
         </button>
       </form>
@@ -545,10 +877,11 @@ function AprobarJustificantes({ justificantes, onUpdate, user }: { justificantes
   const handleApprove = async (id: string, action: 'aprobado' | 'rechazado') => {
     setProcessing(id);
     try {
-      const response = await fetch('/api/justificantes', {
+      const response = await fetch('https://mongo-api-fawn.vercel.app/api/justificantes', {
         method: 'PATCH',
         headers: {
           'Content-Type': 'application/json',
+          'X_API_KEY': process.env.NEXT_PUBLIC_MONGO_API_KEY || ''
         },
         body: JSON.stringify({
           id,
