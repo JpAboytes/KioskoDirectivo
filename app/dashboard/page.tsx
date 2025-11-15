@@ -416,7 +416,6 @@ function AprobarJustificantes({ justificantes, onUpdate, user }: { justificantes
               <p><strong>Solicitante:</strong> {j.requester}</p>
               <p><strong>Fechas:</strong> {j.justifiedDates.join(', ')}</p>
               <p><strong>Estudiantes:</strong></p>
-              <pre className="bg-gray-50 p-2 rounded text-xs whitespace-pre-wrap">{j.studentsText}</pre>
             </div>
             <div className="flex gap-2">
               <button
