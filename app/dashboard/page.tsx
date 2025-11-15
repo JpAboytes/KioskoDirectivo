@@ -3,7 +3,6 @@
 import { useEffect, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { useAuth } from '@/contexts/AuthContext';
-import Link from 'next/link';
 
 interface Justificante {
   _id: string;
@@ -20,7 +19,7 @@ export default function DashboardPage() {
   const [justificantes, setJustificantes] = useState<Justificante[]>([]);
   const [stats, setStats] = useState({ total: 0, pendientes: 0, aprobados: 0 });
   const [loadingData, setLoadingData] = useState(true);
-  const [activeTab, setActiveTab] = useState<'crear' | 'mis-justificantes' | 'aprobar'>('crear');
+  const [activeTab, setActiveTab] = useState<'crear' | 'mis-justificantes' | 'aprobar' | 'subir-archivo'>('crear');
 
   useEffect(() => {
     if (!loading && !user) {
@@ -91,7 +90,7 @@ export default function DashboardPage() {
         <div className="grid grid-cols-1 md:grid-cols-3 gap-6 mb-8">
           <div className="bg-white rounded-lg shadow p-6">
             <div className="flex items-center">
-              <div className="flex-shrink-0 bg-blue-500 rounded-md p-3">
+              <div className="shrink-0 bg-blue-500 rounded-md p-3">
                 <svg className="h-6 w-6 text-white" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                   <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
                 </svg>
@@ -105,7 +104,7 @@ export default function DashboardPage() {
 
           <div className="bg-white rounded-lg shadow p-6">
             <div className="flex items-center">
-              <div className="flex-shrink-0 bg-yellow-500 rounded-md p-3">
+              <div className="shrink-0 bg-yellow-500 rounded-md p-3">
                 <svg className="h-6 w-6 text-white" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                   <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" />
                 </svg>
@@ -144,7 +143,7 @@ export default function DashboardPage() {
                     : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300'
                 }`}
               >
-                ✏️ Crear Justificante
+                Crear Justificante
               </button>
               <button
                 onClick={() => setActiveTab('mis-justificantes')}
@@ -154,7 +153,7 @@ export default function DashboardPage() {
                     : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300'
                 }`}
               >
-                📋 Mis Justificantes
+                Mis Justificantes
               </button>
               <button
                 onClick={() => setActiveTab('aprobar')}
@@ -164,7 +163,17 @@ export default function DashboardPage() {
                     : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300'
                 }`}
               >
-                ✅ Aprobar Justificantes
+                Aprobar Justificantes
+              </button>
+              <button
+                onClick={() => setActiveTab('subir-archivo')}
+                className={`py-4 px-6 text-sm font-medium border-b-2 ${
+                  activeTab === 'subir-archivo'
+                    ? 'border-blue-500 text-blue-600'
+                    : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300'
+                }`}
+              >
+                Subir Archivo
               </button>
             </nav>
           </div>
@@ -173,6 +182,7 @@ export default function DashboardPage() {
             {activeTab === 'crear' && <CrearJustificante user={user} onSuccess={fetchJustificantes} />}
             {activeTab === 'mis-justificantes' && <MisJustificantes justificantes={justificantes.filter(j => j.status !== 'pendiente' || true)} />}
             {activeTab === 'aprobar' && <AprobarJustificantes justificantes={justificantes.filter(j => j.status === 'pendiente')} onUpdate={fetchJustificantes} user={user} />}
+            {activeTab === 'subir-archivo' && <SubirArchivoHTM />}
           </div>
         </div>
       </main>
@@ -363,6 +373,167 @@ function MisJustificantes({ justificantes }: { justificantes: Justificante[] }) 
           </div>
         ))}
       </div>
+    </div>
+  );
+}
+
+// Componente para subir archivo HTM
+function SubirArchivoHTM() {
+  const [file, setFile] = useState<File | null>(null);
+  const [loading, setLoading] = useState(false);
+  const [success, setSuccess] = useState(false);
+  const [error, setError] = useState('');
+
+  const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const selectedFile = e.target.files?.[0];
+    
+    if (selectedFile) {
+      // Validar que sea archivo .htm o .html
+      if (!selectedFile.name.endsWith('.htm') && !selectedFile.name.endsWith('.html')) {
+        setError('Por favor selecciona un archivo .htm o .html');
+        setFile(null);
+        return;
+      }
+      setFile(selectedFile);
+      setError('');
+    }
+  };
+
+  const handleSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    
+    if (!file) {
+      setError('Por favor selecciona un archivo');
+      return;
+    }
+
+    setLoading(true);
+    setError('');
+    setSuccess(false);
+
+    try {
+      const formData = new FormData();
+      formData.append('file', file);
+
+      const response = await fetch('https://mongo-api-fawn.vercel.app/api/upload-tables', {
+        method: 'POST',
+        body: formData,
+      });
+
+      const data = await response.json();
+
+      if (response.ok) {
+        setSuccess(true);
+        setFile(null);
+        // Reset file input
+        const fileInput = document.getElementById('file-input') as HTMLInputElement;
+        if (fileInput) fileInput.value = '';
+        
+        setTimeout(() => setSuccess(false), 5000);
+      } else {
+        setError(data.error || 'Error al subir el archivo');
+      }
+    } catch (err) {
+      setError('Error al conectar con el servidor');
+      console.error('Error:', err);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  return (
+    <div>
+      <h2 className="text-xl font-semibold text-gray-900 mb-4">Subir Archivo HTM</h2>
+      <p className="text-gray-600 mb-6">
+        Sube un archivo .htm para procesar los datos en el servidor
+      </p>
+
+      {success && (
+        <div className="mb-4 p-4 bg-green-50 border border-green-200 text-green-700 rounded-lg flex items-start">
+          <svg className="h-5 w-5 mr-2 mt-0.5" fill="currentColor" viewBox="0 0 20 20">
+            <path fillRule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zm3.707-9.293a1 1 0 00-1.414-1.414L9 10.586 7.707 9.293a1 1 0 00-1.414 1.414l2 2a1 1 0 001.414 0l4-4z" clipRule="evenodd" />
+          </svg>
+          <span>✅ Archivo subido y procesado exitosamente</span>
+        </div>
+      )}
+
+      {error && (
+        <div className="mb-4 p-4 bg-red-50 border border-red-200 text-red-700 rounded-lg flex items-start">
+          <svg className="h-5 w-5 mr-2 mt-0.5" fill="currentColor" viewBox="0 0 20 20">
+            <path fillRule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zM8.707 7.293a1 1 0 00-1.414 1.414L8.586 10l-1.293 1.293a1 1 0 101.414 1.414L10 11.414l1.293 1.293a1 1 0 001.414-1.414L11.414 10l1.293-1.293a1 1 0 00-1.414-1.414L10 8.586 8.707 7.293z" clipRule="evenodd" />
+          </svg>
+          <span>{error}</span>
+        </div>
+      )}
+
+      <form onSubmit={handleSubmit} className="space-y-6">
+        <div className="border-2 border-dashed border-gray-300 rounded-lg p-8 text-center hover:border-blue-400 transition-colors">
+          <svg
+            className="mx-auto h-12 w-12 text-gray-400"
+            stroke="currentColor"
+            fill="none"
+            viewBox="0 0 48 48"
+          >
+            <path
+              d="M28 8H12a4 4 0 00-4 4v20m32-12v8m0 0v8a4 4 0 01-4 4H12a4 4 0 01-4-4v-4m32-4l-3.172-3.172a4 4 0 00-5.656 0L28 28M8 32l9.172-9.172a4 4 0 015.656 0L28 28m0 0l4 4m4-24h8m-4-4v8m-12 4h.02"
+              strokeWidth={2}
+              strokeLinecap="round"
+              strokeLinejoin="round"
+            />
+          </svg>
+          
+          <div className="mt-4">
+            <label
+              htmlFor="file-input"
+              className="cursor-pointer bg-white rounded-md font-medium text-blue-600 hover:text-blue-500 focus-within:outline-none focus-within:ring-2 focus-within:ring-offset-2 focus-within:ring-blue-500"
+            >
+              <span className="px-4 py-2 bg-blue-50 rounded-lg inline-block hover:bg-blue-100 transition-colors">
+                Seleccionar archivo
+              </span>
+              <input
+                id="file-input"
+                type="file"
+                accept=".htm,.html"
+                onChange={handleFileChange}
+                className="sr-only"
+              />
+            </label>
+          </div>
+          
+          <p className="mt-2 text-sm text-gray-500">
+            Archivos .htm o .html únicamente
+          </p>
+          
+          {file && (
+            <div className="mt-4 p-3 bg-blue-50 rounded-lg inline-block">
+              <p className="text-sm text-blue-700 font-medium">
+                📄 {file.name}
+              </p>
+              <p className="text-xs text-blue-600">
+                {(file.size / 1024).toFixed(2)} KB
+              </p>
+            </div>
+          )}
+        </div>
+
+        <button
+          type="submit"
+          disabled={!file || loading}
+          className="w-full bg-blue-600 text-white py-3 px-4 rounded-lg hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-blue-500 disabled:bg-gray-400 disabled:cursor-not-allowed transition-colors font-medium"
+        >
+          {loading ? (
+            <span className="flex items-center justify-center">
+              <svg className="animate-spin -ml-1 mr-3 h-5 w-5 text-white" fill="none" viewBox="0 0 24 24">
+                <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
+                <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+              </svg>
+              Subiendo archivo...
+            </span>
+          ) : (
+            '📤 Subir y Procesar Archivo'
+          )}
+        </button>
+      </form>
     </div>
   );
 }

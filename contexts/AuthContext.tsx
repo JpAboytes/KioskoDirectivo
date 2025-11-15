@@ -38,7 +38,25 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   };
 
   const signUp = async (email: string, password: string) => {
-    await createUserWithEmailAndPassword(auth, email, password);
+    const userCredential = await createUserWithEmailAndPassword(auth, email, password);
+    
+    // Guardar usuario en MongoDB
+    try {
+      await fetch('https://mongo-api-fawn.vercel.app/api/users', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'X-API-KEY': process.env.NEXT_PUBLIC_MONGO_API_KEY || '',
+        },
+        body: JSON.stringify({
+          firebaseUid: userCredential.user.uid,
+          email: userCredential.user.email,
+          displayName: userCredential.user.displayName || email.split('@')[0],
+        }),
+      });
+    } catch (error) {
+      console.error('Error al guardar usuario en MongoDB:', error);
+    }
   };
 
   const signOut = async () => {
