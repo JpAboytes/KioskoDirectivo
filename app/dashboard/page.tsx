@@ -11,6 +11,9 @@ interface Justificante {
   status: 'pendiente' | 'aprobado' | 'rechazado';
   createdAt: string;
   justifiedDates: string[];
+  students?: Array<{ matricula: string; nombre: string; carrera: string }>;
+  approvedBy?: string;
+  approvedAt?: string;
 }
 
 export default function DashboardPage() {
@@ -202,7 +205,7 @@ function CrearJustificante({ user, onSuccess }: { user: any; onSuccess: () => vo
     justifiedDates: '',
     selectedStudents: [] as string[],
   });
-  const [students, setStudents] = useState<Array<{ matricula: string; nombre: string; apellidos: string; carrera: string }>>([]);
+  const [students, setStudents] = useState<Array<{ _id?: string; matricula: string; nombre: string; apellidos: string; carrera: string }>>([]);
   const [loadingStudents, setLoadingStudents] = useState(false);
   const [searchTerm, setSearchTerm] = useState('');
   const [loading, setLoading] = useState(false);
@@ -264,17 +267,22 @@ function CrearJustificante({ user, onSuccess }: { user: any; onSuccess: () => vo
 
       const dates = formData.justifiedDates.split(',').map(d => d.trim()).filter(d => d);
 
-      // Construir texto de estudiantes desde selección
-      const studentsText = formData.selectedStudents
+      // Construir array de estudiantes completos
+      const estudiantesData = formData.selectedStudents
         .map(matricula => {
           const student = students.find(s => s.matricula === matricula);
           if (student) {
-            return `${student.nombre} ${student.apellidos} – ${student.matricula} – ${student.carrera}`;
+            return {
+              _id: student._id || null,
+              matricula: student.matricula,
+              nombre: student.nombre,
+              apellidos: student.apellidos,
+              carrera: student.carrera || ''
+            };
           }
-          return '';
+          return null;
         })
-        .filter(Boolean)
-        .join('\n');
+        .filter(Boolean);
 
       const response = await fetch('https://mongo-api-fawn.vercel.app/api/justificantes', {
         method: 'POST',
@@ -286,7 +294,7 @@ function CrearJustificante({ user, onSuccess }: { user: any; onSuccess: () => vo
           requester: formData.requester,
           eventName: formData.eventName,
           justifiedDates: dates,
-          studentsText,
+          estudiantes: estudiantesData,
           userId: user.uid,
           userEmail: user.email,
         }),
@@ -962,6 +970,16 @@ function AprobarJustificantes({ justificantes, onUpdate, user }: { justificantes
               <p><strong>Solicitante:</strong> {j.requester}</p>
               <p><strong>Fechas:</strong> {j.justifiedDates.join(', ')}</p>
               <p><strong>Estudiantes:</strong></p>
+              {j.students && j.students.length > 0 && (
+                <ul className="ml-4 mt-1 text-xs">
+                  {j.students.slice(0, 3).map((s, idx) => (
+                    <li key={idx}>• {s.nombre} ({s.matricula})</li>
+                  ))}
+                  {j.students.length > 3 && (
+                    <li className="text-gray-500">... y {j.students.length - 3} más</li>
+                  )}
+                </ul>
+              )}
             </div>
             <div className="flex gap-2">
               <button
