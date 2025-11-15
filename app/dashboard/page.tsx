@@ -202,7 +202,7 @@ function CrearJustificante({ user, onSuccess }: { user: any; onSuccess: () => vo
   const [formData, setFormData] = useState({
     requester: '',
     eventName: '',
-    justifiedDates: '',
+    justifiedDates: [] as string[],
     selectedStudents: [] as string[],
   });
   const [students, setStudents] = useState<Array<{ _id?: string; matricula: string; nombre: string; apellidos: string; carrera: string }>>([]);
@@ -265,7 +265,13 @@ function CrearJustificante({ user, onSuccess }: { user: any; onSuccess: () => vo
         return;
       }
 
-      const dates = formData.justifiedDates.split(',').map(d => d.trim()).filter(d => d);
+      if (formData.justifiedDates.length === 0 || formData.justifiedDates.some(d => !d)) {
+        setError('Debes agregar al menos una fecha válida');
+        setLoading(false);
+        return;
+      }
+
+      const dates = formData.justifiedDates; // Ya es un array
 
       // Construir array de estudiantes completos
       const estudiantesData = formData.selectedStudents
@@ -304,7 +310,7 @@ function CrearJustificante({ user, onSuccess }: { user: any; onSuccess: () => vo
 
       if (data.success) {
         setSuccess(true);
-        setFormData({ requester: '', eventName: '', justifiedDates: '', selectedStudents: [] });
+        setFormData({ requester: '', eventName: '', justifiedDates: [], selectedStudents: [] });
         setSearchTerm('');
         onSuccess();
         setTimeout(() => setSuccess(false), 3000);
@@ -371,15 +377,48 @@ function CrearJustificante({ user, onSuccess }: { user: any; onSuccess: () => vo
           <label className="block text-sm font-medium text-gray-700 mb-2">
             Fechas Justificadas <span className="text-red-500">*</span>
           </label>
-          <input
-            type="text"
-            value={formData.justifiedDates}
-            onChange={(e) => setFormData({ ...formData, justifiedDates: e.target.value })}
-            required
-            className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
-            placeholder="Ej: 2025-11-15, 2025-11-16"
-          />
-          <p className="mt-1 text-sm text-gray-500">Separa las fechas con comas</p>
+          
+          <div className="space-y-2">
+            {formData.justifiedDates.map((date, index) => (
+              <div key={index} className="flex gap-2 items-center">
+                <input
+                  type="date"
+                  value={date}
+                  onChange={(e) => {
+                    const newDates = [...formData.justifiedDates];
+                    newDates[index] = e.target.value;
+                    setFormData({ ...formData, justifiedDates: newDates });
+                  }}
+                  required
+                  className="flex-1 px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
+                />
+                <button
+                  type="button"
+                  onClick={() => {
+                    const newDates = formData.justifiedDates.filter((_, i) => i !== index);
+                    setFormData({ ...formData, justifiedDates: newDates });
+                  }}
+                  className="px-3 py-2 bg-red-500 text-white rounded-lg hover:bg-red-600 transition-colors"
+                >
+                  ✕
+                </button>
+              </div>
+            ))}
+            
+            <button
+              type="button"
+              onClick={() => {
+                setFormData({ ...formData, justifiedDates: [...formData.justifiedDates, ''] });
+              }}
+              className="w-full px-3 py-2 border-2 border-dashed border-gray-300 rounded-lg text-gray-600 hover:border-blue-500 hover:text-blue-600 transition-colors"
+            >
+              + Agregar fecha
+            </button>
+          </div>
+          
+          {formData.justifiedDates.length === 0 && (
+            <p className="mt-1 text-sm text-gray-500">Haz clic en "Agregar fecha" para seleccionar las fechas a justificar</p>
+          )}
         </div>
 
         <div>
@@ -487,6 +526,19 @@ function MisJustificantes({ justificantes }: { justificantes: Justificante[] }) 
             <p className="text-sm text-gray-600 mb-1">
               <strong>Fechas:</strong> {j.justifiedDates.join(', ')}
             </p>
+            {j.students && j.students.length > 0 && (
+              <div className="mt-2 mb-2">
+                <p className="text-sm text-gray-600 font-semibold mb-1">Estudiantes justificados:</p>
+                <ul className="ml-4 text-xs text-gray-600">
+                  {j.students.slice(0, 5).map((s, idx) => (
+                    <li key={idx}>• {s.nombre} ({s.matricula})</li>
+                  ))}
+                  {j.students.length > 5 && (
+                    <li className="text-gray-500 italic">... y {j.students.length - 5} estudiantes más</li>
+                  )}
+                </ul>
+              </div>
+            )}
             <p className="text-sm text-gray-500">
               Creado: {new Date(j.createdAt).toLocaleDateString('es-MX')}
             </p>
