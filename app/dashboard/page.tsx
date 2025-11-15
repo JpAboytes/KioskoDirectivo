@@ -280,7 +280,7 @@ function CrearJustificante({ user, onSuccess }: { user: any; onSuccess: () => vo
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
-          'X_API_KEY': process.env.NEXT_PUBLIC_MONGO_API_KEY || ''
+          'X-API-KEY': process.env.NEXT_PUBLIC_MONGO_API_KEY || ''
         },
         body: JSON.stringify({
           requester: formData.requester,
@@ -414,7 +414,7 @@ function CrearJustificante({ user, onSuccess }: { user: any; onSuccess: () => vo
                           {student.nombre} {student.apellidos}
                         </p>
                         <p className="text-xs text-gray-500">
-                          {student.matricula} • {student.carrera}
+                          {student.matricula}
                         </p>
                       </div>
                     </label>
@@ -536,10 +536,27 @@ function SubirArchivoHTM() {
       let profesorApellidos = '';
       let grupoActual = '';
       let materiaActual = '';
+      let carreraActual = 'Sin especificar'; // Mantener estado de la carrera
       
       for (const row of Array.from(rows)) {
         const text = row.textContent?.trim() || '';
         const cells = row.querySelectorAll('td, th');
+        
+        // Detectar línea de programa/carrera (rows que mencionan el programa)
+        // Buscar patrones como "INGENIERIA EN...", "LIC. EN...", etc.
+        if (cells.length > 0 && cells.length < 6) {
+          const cellText = cells[0]?.textContent?.trim() || cells[1]?.textContent?.trim() || '';
+          // Detectar si es una línea de programa (usualmente contiene palabras como INGENIERIA, LICENCIATURA, etc.)
+          if (cellText && (
+            cellText.includes('INGENIERIA') || 
+            cellText.includes('INGENIERÍA') ||
+            cellText.includes('LIC.') ||
+            cellText.includes('LICENCIATURA') ||
+            cellText.match(/^[A-Z\s]+EN\s+[A-Z]/i)
+          )) {
+            carreraActual = cellText;
+          }
+        }
         
         // Detectar línea de grupo y profesor (ej: "GRUPO:107C07-41 MAESTRO: 72256 RAMIREZ AVILA, ARMANDO MTRO.")
         if (text.includes('GRUPO:') && text.includes('MAESTRO:')) {
@@ -586,15 +603,14 @@ function SubirArchivoHTM() {
               nombreCell && nombreCell.includes(',')) {
             
             const [apellidosStr, nombreStr] = nombreCell.split(',').map(s => s.trim());
-            const programaCell = cells[1]?.textContent?.trim() || '';
-            const carrera = programaCell || 'Sin especificar';
             
+            // Usar la carrera actual que se mantiene desde la última fila de programa detectada
             if (!estudiantesMap.has(matriculaCell)) {
               estudiantesMap.set(matriculaCell, {
                 matricula: matriculaCell,
                 nombre: nombreStr || '',
                 apellidos: apellidosStr || '',
-                carrera: carrera,
+                carrera: carreraActual,
                 escuela: 'Ingeniería',
                 status: 'activo'
               });
@@ -659,7 +675,7 @@ function SubirArchivoHTM() {
           method: 'POST',
           headers: {
             'Content-Type': 'application/json',
-            'X_API_KEY': process.env.NEXT_PUBLIC_MONGO_API_KEY || ''
+            'X-API-KEY': process.env.NEXT_PUBLIC_MONGO_API_KEY || ''
           },
           body: JSON.stringify({
             estudiantes: batch,
@@ -670,8 +686,21 @@ function SubirArchivoHTM() {
         });
 
         if (!response.ok) {
-          const errorData = await response.json();
-          throw new Error(errorData.error || `Error en lote ${batchCount}`);
+          let errorMessage = `Error en lote ${batchCount}`;
+          try {
+            const errorData = await response.json();
+            errorMessage = errorData.error || errorData.message || errorMessage;
+            console.error('Error del servidor:', errorData);
+          } catch (e) {
+            const textError = await response.text();
+            console.error('Respuesta del servidor:', textError);
+          }
+          throw new Error(errorMessage);
+        }
+        
+        const result = await response.json();
+        if (!result.success) {
+          throw new Error(result.error || `Error procesando lote ${batchCount}`);
         }
       }
       
@@ -687,7 +716,7 @@ function SubirArchivoHTM() {
             method: 'POST',
             headers: {
               'Content-Type': 'application/json',
-              'X_API_KEY': process.env.NEXT_PUBLIC_MONGO_API_KEY || ''
+              'X-API-KEY': process.env.NEXT_PUBLIC_MONGO_API_KEY || ''
             },
             body: JSON.stringify({
               estudiantes: [],
@@ -698,8 +727,21 @@ function SubirArchivoHTM() {
           });
 
           if (!response.ok) {
-            const errorData = await response.json();
-            throw new Error(errorData.error || `Error en lote ${batchCount}`);
+            let errorMessage = `Error en lote ${batchCount}`;
+            try {
+              const errorData = await response.json();
+              errorMessage = errorData.error || errorData.message || errorMessage;
+              console.error('Error del servidor:', errorData);
+            } catch (e) {
+              const textError = await response.text();
+              console.error('Respuesta del servidor:', textError);
+            }
+            throw new Error(errorMessage);
+          }
+          
+          const result = await response.json();
+          if (!result.success) {
+            throw new Error(result.error || `Error procesando lote ${batchCount}`);
           }
         }
       }
@@ -881,7 +923,7 @@ function AprobarJustificantes({ justificantes, onUpdate, user }: { justificantes
         method: 'PATCH',
         headers: {
           'Content-Type': 'application/json',
-          'X_API_KEY': process.env.NEXT_PUBLIC_MONGO_API_KEY || ''
+          'X-API-KEY': process.env.NEXT_PUBLIC_MONGO_API_KEY || ''
         },
         body: JSON.stringify({
           id,
