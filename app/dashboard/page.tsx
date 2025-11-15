@@ -214,7 +214,7 @@ function CrearJustificante({ user, onSuccess }: { user: any; onSuccess: () => vo
     const fetchStudents = async () => {
       setLoadingStudents(true);
       try {
-        const response = await fetch('https://mongo-api-fawn.vercel.app/api/estudiantes', {
+        const response = await fetch('https://mongo-api-fawn.vercel.app/api/students', {
           headers: {
             'X-API-KEY': process.env.NEXT_PUBLIC_MONGO_API_KEY || ''
           }
